@@ -40,6 +40,8 @@ function App() {
   const [tippingFid, setTippingFid] = useState<number | null>(null)
   const [loadingProgress, setLoadingProgress] = useState<number>(0)
   const [totalToLoad, setTotalToLoad] = useState<number>(11) // 5 below + current + 5 above
+  const [isTransactionLoading, setIsTransactionLoading] = useState<boolean>(false)
+  const [lastTippedFid, setLastTippedFid] = useState<number | null>(null)
 
   useEffect(() => {
     if (account.addresses && account.addresses[0]) {
@@ -50,10 +52,11 @@ function App() {
     }
   }, [account.addresses])
 
-  const handleSendTransaction = async (targetAddress: `0x${string}`, amount: string) => {
+  const handleSendTransaction = async (targetAddress: `0x${string}`, amount: string, neighborFid: number) => {
     try {
       setTxError(null) // Clear previous errors
-      setTippingFid(null)
+      setIsTransactionLoading(true)
+      setLastTippedFid(neighborFid)
       console.log(`Attempting to send ${amount} ETH to ${targetAddress}...`)
       const result = await sendTransactionAsync({
         to: targetAddress,
@@ -63,6 +66,8 @@ function App() {
     } catch (err) {
       console.error("Transaction failed:", err)
       setTxError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setIsTransactionLoading(false)
     }
   }
 
@@ -174,10 +179,10 @@ function App() {
     setTippingFid(neighborFid);
   };
 
-  const sendTip = (address: string) => {
+  const sendTip = (address: string, neighborFid: number) => {
     // Convert to proper Ethereum address format
     const ethAddress = address as `0x${string}`;
-    handleSendTransaction(ethAddress, tipAmount);
+    handleSendTransaction(ethAddress, tipAmount, neighborFid);
   };
 
   return (
@@ -342,51 +347,69 @@ function App() {
                       </div>
                       
                       {parseInt(fid, 10) !== neighbor.fid && (
-                        <div className="neighbor-actions">
-                          {tippingFid === neighbor.fid ? (
-                            <>
-                              <div className="confirm-tip">
-                                <span>Send {tipAmount} ETH to FID {neighbor.fid}?</span>
-                                <div className="confirm-buttons">
-                                  <button 
-                                    type="button" 
-                                    onClick={() => sendTip(neighbor.owner)}
-                                    className="confirm-button"
-                                  >
-                                    Confirm
-                                  </button>
-                                  <button 
-                                    type="button" 
-                                    onClick={() => setTippingFid(null)}
-                                    className="cancel-button"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
+                        <>
+                          <div className="neighbor-actions">
+                            {!tippingFid || tippingFid !== neighbor.fid ? (
+                              <button 
+                                type="button" 
+                                onClick={() => handleTipClick(neighbor.fid, neighbor.owner)}
+                                className="tip-button"
+                              >
+                                Tip
+                              </button>
+                            ) : null}
+                          </div>
+                          
+                          {tippingFid === neighbor.fid && (
+                            <div className="confirm-tip">
+                              <span>Send {tipAmount} ETH to FID {neighbor.fid}?</span>
+                              <div className="confirm-buttons">
+                                <button 
+                                  type="button" 
+                                  onClick={() => sendTip(neighbor.owner, neighbor.fid)}
+                                  className="confirm-button"
+                                >
+                                  Confirm
+                                </button>
+                                <button 
+                                  type="button" 
+                                  onClick={() => setTippingFid(null)}
+                                  className="cancel-button"
+                                >
+                                  Cancel
+                                </button>
                               </div>
-                            </>
-                          ) : (
-                            <button 
-                              type="button" 
-                              onClick={() => handleTipClick(neighbor.fid, neighbor.owner)}
-                              className="tip-button"
-                            >
-                              Tip
-                            </button>
+                            </div>
                           )}
-                        </div>
+                          
+                          {isTransactionLoading && lastTippedFid === neighbor.fid && (
+                            <div className="transaction-loading">
+                              <div className="spinner"></div>
+                              <span>Transaction in progress...</span>
+                            </div>
+                          )}
+                          
+                          {txData && lastTippedFid === neighbor.fid && (
+                            <div className="status-message connected transaction-success">
+                              Transaction sent successfully! 🎉
+                              <div className="account-info">
+                                <small>
+                                  <a 
+                                    href={`https://sepolia.basescan.org/tx/${txData}`} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="tx-hash-link"
+                                  >
+                                    {txData.toString().substring(0, 10)}...
+                                  </a>
+                                </small>
+                              </div>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   ))}
-                </div>
-              </div>
-            )}
-            
-            {txData && (
-              <div className="status-message connected">
-                Transaction sent successfully! 🎉
-                <div className="account-info">
-                  <small>{txData}</small>
                 </div>
               </div>
             )}
@@ -404,3 +427,69 @@ function App() {
 }
 
 export default App
+
+const styles = `
+  .transaction-success {
+    margin-top: 10px;
+    font-size: 0.85rem;
+    word-break: break-word;
+    overflow: hidden;
+    width: 100%;
+    background-color: rgba(0, 128, 0, 0.1);
+    border-radius: 6px;
+    padding: 8px;
+    border: 1px solid rgba(0, 128, 0, 0.2);
+  }
+  
+  .tx-hash-link {
+    color: #3b82f6;
+    text-decoration: underline;
+    word-break: break-word;
+    display: inline-block;
+  }
+  
+  .confirm-tip {
+    margin-top: 10px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .confirm-buttons {
+    display: flex;
+    gap: 10px;
+  }
+  
+  .confirm-button {
+    background-color: #6366f1;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  
+  .cancel-button {
+    background-color: #ef4444;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  
+  .transaction-loading {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+`
+
+// Add styles to the head
+if (typeof document !== 'undefined') {
+  const styleElement = document.createElement('style');
+  styleElement.innerHTML = styles;
+  document.head.appendChild(styleElement);
+}
